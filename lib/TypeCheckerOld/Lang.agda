@@ -1,4 +1,4 @@
-module TypeChecker.Lang where
+module TypeCheckerOld.Lang where
 
 open import Haskell.Prelude
 
@@ -210,6 +210,7 @@ interpConst ESucc = VFun (EConst ESucc)
 interpConst EPred = VFun (EConst EPred)
 interpConst EIsZero = VFun (EConst EIsZero)
 
+-- also add Var
 interpLam (EConst ESucc) (VInt i) nv = Just (VInt (i + 1))
 interpLam (EConst EPred) (VInt i) nv = Just (VInt (i - 1))
 interpLam (EConst EIsZero) (VInt i) nv = Just (VBool (i == 0))

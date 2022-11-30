@@ -1,2 +1,5 @@
 *.hs
 *.agdai
+
+_build/
+_haskell/
