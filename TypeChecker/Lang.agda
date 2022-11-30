@@ -43,6 +43,17 @@ data Expr : Set where
 {-# COMPILE AGDA2HS Expr #-}
 
 ------------------------------------------------------------
+-- VALUES                                                 --
+------------------------------------------------------------
+
+data Val : Set where
+    VInt  : Int → Val
+    VBool : Bool → Val
+    VFun  : Expr → Val
+
+{-# COMPILE AGDA2HS Val #-}
+
+------------------------------------------------------------
 -- CONTEXT                                                --
 ------------------------------------------------------------
 
@@ -54,19 +65,49 @@ findInCtx : {a : Set} → String → Ctx a → Maybe a
 findInCtx x CNil = Nothing
 findInCtx x (CCons c t cs) = if x == c then Just t else findInCtx x cs
 
+data HasValue {a : Set} : String → a → Ctx a → Set where
+    Z : ∀ {x a C} → HasValue x a (CCons x a C)
+    S : ∀ {x y a b C} → HasValue x a C → HasValue x a (CCons y b C)
+
 {-# COMPILE AGDA2HS Ctx #-}
 {-# COMPILE AGDA2HS findInCtx #-}
 
+TCtx = List Type
+
+data In : Type → TCtx → Set where
+    Z : ∀ {t C} → In t (t ∷ C)
+    S : ∀ {t s C} → In t C → In t (s ∷ C)
+
+-- Env : TCtx → Set
+-- Env C = {! All Val C  !}
+    
 ------------------------------------------------------------
--- VALUES                                                 --
+-- TYPED EXPRESSIONS                                      --
 ------------------------------------------------------------
 
-data Val : Set where
-    VInt  : Int → Val
-    VBool : Bool → Val
-    VFun  : Expr → Val
+data TConst : Type → Set where
+    -- booleans
+    TETrue : TConst TBool
+    TEFalse : TConst TBool
+    -- zero
+    TEZero : TConst TInt
+    -- number functions
+    TESucc : TConst (TFun TInt TInt)
+    TEPred : TConst (TFun TInt TInt)
+    TEIsZero : TConst (TFun TInt TBool)
 
-{-# COMPILE AGDA2HS Val #-}
+data TExpr (C : TCtx) : Type → Set where
+    TEConst : ∀ {t} → TConst t → TExpr C t
+    -- flow control
+    TEIf : ∀ {t} → TExpr C TBool → TExpr C t → TExpr C t → TExpr C t
+    -- variables
+    TEVar : ∀ {t} → In t C → TExpr C t
+    -- functions
+    TELam : ∀ {p b} → TExpr (p ∷ C) b → TExpr C (TFun p b)
+    -- function application
+    TEApp : ⦃ @0 _ : NonEmpty C ⦄ → ∀ {p b}
+     → TExpr (tail C) (TFun p b) → TExpr (tail C) p
+     → TExpr C b
 
 ------------------------------------------------------------
 -- EQUALITIES                                             --
@@ -189,7 +230,7 @@ interp (EApp (ELam x _ body) arg) nv =
         _ → Nothing
 interp (EApp lam arg) nv =
     case (interp lam nv , interp arg nv) of λ where
-        (Just (VFun f) , Just v) → interpLam f v nv
+        -- (Just (VFun f) , Just v) → interpLam f v nv
         _ → Nothing
 
 
@@ -199,3 +240,50 @@ interp (EApp lam arg) nv =
     --     (Just (VFun (EConst EIsZero)) , Just (VInt i)) → Just (VBool (i == 0))
     --     -- (Just (VFun (ELam x _ body)) , Just v) → interp body (CCons x v nv) ⇒ ma boi causes a termination error
     --     _ → Nothing
+
+------------------------------------------------------------
+-- TO TYPED                                               --
+------------------------------------------------------------
+
+data TypedC : Const → Type → Set where
+    -- booleans
+    TTrue : TypedC ETrue TBool
+    TFalse : TypedC EFalse TBool
+    -- zero
+    TZero : TypedC EZero TInt
+    -- number functions
+    TSucc : TypedC ESucc (TFun TInt TInt)
+    TPred : TypedC EPred (TFun TInt TInt)
+    TIsZero : TypedC EIsZero (TFun TInt TBool)
+
+
+toTypedC : ∀ {c t} → TypedC c t → TConst t
+toTypedC TTrue = TETrue
+toTypedC TFalse = TEFalse
+toTypedC TZero = TEZero
+toTypedC TSucc = TESucc
+toTypedC TPred = TEPred
+toTypedC TIsZero = TEIsZero
+
+data TypedE (C : Ctx Type) : Expr → Type → Set where
+    TEConst : ∀ {c t} →  TypedC c t → TypedE C (EConst c) t
+    -- flow control
+    TIf : ∀ {b t iff thn els} 
+        → TypedE C iff b
+        → TypedE C thn t → TypedE C els t
+        → TypedE C (EIf iff thn els) t
+    -- variables
+    TVar : ∀ {t x}
+        → HasValue x t C
+        → TypedE C (EVar x) t
+    -- functions
+    TLam : ∀ {p b x body}
+        → TypedE (CCons x p C) body b
+        → TypedE C (ELam x p body) (TFun p b)
+    -- function application
+    TApp : ∀ {p b lam arg}
+        → TypedE C lam (TFun p b) → TypedE C arg p
+        → TypedE C (EApp lam arg) b
+
+-- toTypedE : ∀ {e t C} → TypedE C e t → TExpr C t
+-- toTypedE = ?
