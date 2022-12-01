@@ -3,6 +3,8 @@ module TypeChecker.Safe where
 open import Haskell.Prelude
 open import TypeChecker.Lang
 
+import Relation.Binary.PropositionalEquality as PEq
+open PEq using (_≡_; refl)
 open import Data.Product using (∃;∃-syntax) renaming (_,_ to ⟨_,_⟩)
 
 ------------------------------------------------------------
@@ -17,6 +19,7 @@ data TExpr : @0 Type → Set where
     TENot  : TExpr TBool → TExpr TBool
     TEAnd  : TExpr TBool → TExpr TBool → TExpr TBool
     TEOr   : TExpr TBool → TExpr TBool → TExpr TBool
+    TEIf   : ∀ {t} → TExpr TBool → TExpr t → TExpr t → TExpr t
 
 eqTExpr : ∀ {@0 t} → TExpr t → TExpr t → Bool
 eqTExpr (TEBool a) (TEBool b) = a == b
@@ -26,6 +29,7 @@ eqTExpr (TEEq left₁ right₁) (TEEq left₂ right₂) = eqTExpr left₁ left�
 eqTExpr (TENot a) (TENot b) = eqTExpr a b
 eqTExpr (TEAnd left₁ right₁) (TEAnd left₂ right₂) = eqTExpr left₁ left₂ && eqTExpr right₁ right₂
 eqTExpr (TEOr left₁ right₁) (TEOr left₂ right₂) = eqTExpr left₁ left₂ && eqTExpr right₁ right₂
+eqTExpr (TEIf iff₁ thn₁ els₁) (TEIf iff₂ thn₂ els₂) = eqTExpr iff₁ iff₂ && eqTExpr thn₁ thn₂ && eqTExpr els₁ els₂
 eqTExpr _ _ = False
 
 instance
@@ -84,6 +88,10 @@ data HasType : Expr → Type → Set where
     TOr   : ∀ {left right}
         → HasType left TBool → HasType right TBool
         → HasType (EOr left right) TBool
+    TIf   : ∀ {t iff thn els}
+        → HasType iff TBool
+        → HasType thn t → HasType els t
+        → HasType (EIf iff thn els) t
         
 ------------------------------------------------------------
 -- TYPE CHECK                                             --
@@ -99,6 +107,16 @@ data HasType : Expr → Type → Set where
 --     field
 --         type : T
 --         proof : P type
+
+typeEqProof : ∀ {e t s} → HasType e t → (t == s) ≡ True → HasType e s
+typeEqProof TBool e = {!   !}
+typeEqProof TInt e = {!   !}
+typeEqProof (TAdd h h₁) e = {!   !}
+typeEqProof (TEq h h₁) e = {!   !}
+typeEqProof (TNot h) e = {!   !}
+typeEqProof (TAnd h h₁) e = {!   !}
+typeEqProof (TOr h h₁) e = {!   !}
+typeEqProof (TIf h h₁ h₂) e = {!   !}
 
 typeProof : (e : Expr) → Maybe (∃[ t ](HasType e t))
 typeProof (EBool _) = Just ⟨ TBool , TBool ⟩
@@ -128,6 +146,13 @@ typeProof (EOr left right) =
         (Just ⟨ TBool , hₗ ⟩ , Just ⟨ TBool , hᵣ ⟩)
             → Just ⟨ TBool , TOr hₗ hᵣ ⟩
         _   → Nothing
+typeProof (EIf iff thn els) =
+    case (typeProof iff , typeProof thn , typeProof els) of λ where
+        (Just ⟨ TBool , hᵢ ⟩ , Just ⟨ t , hₜ ⟩ , Just ⟨ e , hₑ ⟩)
+            → case (t == e) of λ where
+                True → Just ⟨ t , TIf hᵢ hₜ (typeEqProof hₑ {!   !}) ⟩
+                False → Nothing
+        _   → Nothing
 
 {-# COMPILE AGDA2HS typeProof #-}
         
@@ -143,6 +168,7 @@ convert (EEq left right) (TEq hl hr) = TEEq (convert left hl) (convert right hr)
 convert (ENot e) (TNot h) = TENot (convert e h)
 convert (EAnd left right) (TAnd hl hr) = TEAnd (convert left hl) (convert right hr)
 convert (EOr left right) (TOr hl hr) = TEOr (convert left hl) (convert right hr)
+convert (EIf iff thn els) (TIf hi ht he) = {!   !} -- TEIf (convert iff hi) {!   !} {!   !}
 
 typedInterp : ∀ {@0 t} → TExpr t → TVal t
 typedInterp (TEBool b) = VBool b
@@ -162,6 +188,10 @@ typedInterp (TEAnd left right) =
 typedInterp (TEOr left right) = 
     case (typedInterp left , typedInterp right) of λ where
         (VBool a , VBool b) → VBool (a || b)
+typedInterp (TEIf iff thn els) =
+    case (typedInterp iff) of λ where
+        (VBool False) → typedInterp thn
+        (VBool True) → typedInterp els
 
 {-# COMPILE AGDA2HS convert #-}
 {-# COMPILE AGDA2HS typedInterp #-}

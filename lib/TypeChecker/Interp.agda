@@ -34,6 +34,11 @@ interp (EOr left right) =
     case (interp left , interp right) of λ where
         (Just (VBool a) , Just (VBool b)) → Just (VBool (a || b))
         _ → Nothing
+interp (EIf iff thn els) =
+    case (interp iff , interp thn , interp els) of λ where
+        (Just (VBool b) , Just t , Just e)
+            → if eqValType t e then (Just (if b then t else e)) else Nothing
+        _   → Nothing
 
 {-# COMPILE AGDA2HS interp #-}
 
@@ -64,6 +69,11 @@ typeOf (EOr left right) =
     case (typeOf left , typeOf right) of λ where
         (Just TBool , Just TBool) → Just TBool
         _ → Nothing
+typeOf (EIf iff thn els) =
+    case (typeOf iff , typeOf thn , typeOf els) of λ where
+        (Just TBool , Just t , Just e)
+            → if t == e then (Just t) else Nothing
+        _   → Nothing
 
 {-# COMPILE AGDA2HS typeOf #-}
 

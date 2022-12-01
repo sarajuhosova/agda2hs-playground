@@ -33,6 +33,7 @@ data Expr : Set where
     ENot  : Expr → Expr
     EAnd  : Expr → Expr → Expr
     EOr   : Expr → Expr → Expr
+    EIf   : Expr → Expr → Expr → Expr
 
 eqExpr : Expr → Expr → Bool
 eqExpr (EBool a) (EBool b) = a == b
@@ -42,6 +43,7 @@ eqExpr (EEq left₁ right₁) (EEq left₂ right₂) = eqExpr left₁ left₂ &&
 eqExpr (ENot a) (ENot b) = eqExpr a b
 eqExpr (EAnd left₁ right₁) (EAnd left₂ right₂) = eqExpr left₁ left₂ && eqExpr right₁ right₂
 eqExpr (EOr left₁ right₁) (EOr left₂ right₂) = eqExpr left₁ left₂ && eqExpr right₁ right₂
+eqExpr (EIf iff₁ thn₁ els₁) (EIf iff₂ thn₂ els₂) = eqExpr iff₁ iff₂ && eqExpr thn₁ thn₂ && eqExpr els₁ els₂
 eqExpr _ _ = False
 
 instance
@@ -68,3 +70,10 @@ instance
   iEqVal ._==_ = eqVal
 
 {-# COMPILE AGDA2HS Val #-}
+
+eqValType : Val → Val → Bool
+eqValType (VBool _) (VBool _) = True
+eqValType (VInt _) (VInt _) = True
+eqValType _ _ = False
+
+{-# COMPILE AGDA2HS eqValType #-}
