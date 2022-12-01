@@ -52,9 +52,11 @@ instance
 
 {-# COMPILE AGDA2HS TVal #-}
 
-simplify : ∀ {t} → TVal t → Val
+simplify : ∀ {@0 t} → TVal t → Val
 simplify (VBool b) = VBool b
 simplify (VInt i) = VInt i
+
+{-# COMPILE AGDA2HS simplify #-}
 
 -- val : Type → Set
 -- val TBool = Bool
@@ -87,46 +89,53 @@ data HasType : Expr → Type → Set where
 -- TYPE CHECK                                             --
 ------------------------------------------------------------
 
--- record TypeProof (e : Expr) (t : Type) : Set where
---     field
---         expression : Expr
---         type : Type
---         proof : HasType e t
+-- record Σ {a b} (A : Set a) (B : A → Set b) : Set (a ⊔ b) where
+--   constructor _,_
+--   field
+--     fst : A
+--     snd : B fst
 
-type : (e : Expr) → Maybe (∃[ t ](HasType e t))
-type (EBool _) = Just ⟨ TBool , TBool ⟩
-type (EInt _) = Just ⟨ TInt , TInt ⟩
-type (EAdd left right) =
-    case (type left , type right) of λ where
+-- record TypeProof {e : Expr} {t : Type} (T : Set t) (P : T → HasType e T) : Set where
+--     field
+--         type : T
+--         proof : P type
+
+typeProof : (e : Expr) → Maybe (∃[ t ](HasType e t))
+typeProof (EBool _) = Just ⟨ TBool , TBool ⟩
+typeProof (EInt _) = Just ⟨ TInt , TInt ⟩
+typeProof (EAdd left right) =
+    case (typeProof left , typeProof right) of λ where
         (Just ⟨ TInt , hₗ ⟩ , Just ⟨ TInt , hᵣ ⟩)
             → Just ⟨ TInt , TAdd hₗ hᵣ ⟩
         _   → Nothing
-type (EEq left right) = 
-    case (type left , type right) of λ where
+typeProof (EEq left right) = 
+    case (typeProof left , typeProof right) of λ where
         (Just ⟨ TInt , hₗ ⟩ , Just ⟨ TInt , hᵣ ⟩)
             → Just ⟨ TBool , TEq hₗ hᵣ ⟩
         _   → Nothing
-type (ENot e) =
-    case (type e) of λ where
+typeProof (ENot e) =
+    case (typeProof e) of λ where
         (Just ⟨ TBool , h ⟩)
             → Just ⟨ TBool , TNot h ⟩
         _   → Nothing
-type (EAnd left right) = 
-    case (type left , type right) of λ where
+typeProof (EAnd left right) = 
+    case (typeProof left , typeProof right) of λ where
         (Just ⟨ TBool , hₗ ⟩ , Just ⟨ TBool , hᵣ ⟩)
             → Just ⟨ TBool , TAnd hₗ hᵣ ⟩
         _   → Nothing
-type (EOr left right) =
-    case (type left , type right) of λ where
+typeProof (EOr left right) =
+    case (typeProof left , typeProof right) of λ where
         (Just ⟨ TBool , hₗ ⟩ , Just ⟨ TBool , hᵣ ⟩)
             → Just ⟨ TBool , TOr hₗ hᵣ ⟩
         _   → Nothing
+
+{-# COMPILE AGDA2HS typeProof #-}
         
 ------------------------------------------------------------
 -- TYPED INTERPRETER                                      --
 ------------------------------------------------------------
 
-convert : ∀ {@0 t} → (e : Expr) → HasType e t → TExpr t
+convert : ∀ {@0 t} → (e : Expr) → @0 HasType e t → TExpr t
 convert (EBool b) TBool = TEBool b
 convert (EInt i) TInt = TEInt i
 convert (EAdd left right) (TAdd hl hr) = TEAdd (convert left hl) (convert right hr)
@@ -154,21 +163,31 @@ typedInterp (TEOr left right) =
     case (typedInterp left , typedInterp right) of λ where
         (VBool a , VBool b) → VBool (a || b)
 
+{-# COMPILE AGDA2HS convert #-}
 {-# COMPILE AGDA2HS typedInterp #-}
         
 ------------------------------------------------------------
 -- SAFE INTERP                                            --
 ------------------------------------------------------------
 
-combine : Expr → Maybe (∃[ t ](TVal t))
-combine e with type e
+combine' : Expr → Maybe (∃[ t ](TVal t))
+combine' e with typeProof e
 ... | Just ⟨ t , h ⟩ = Just ⟨ t , typedInterp (convert e h) ⟩
 ... | _              = Nothing
 
-safeInterp : Expr → Maybe Val
-safeInterp e with combine e
+safeInterp' : Expr → Maybe Val
+safeInterp' e with combine' e
 ... | Just ⟨ _ , v ⟩ = Just (simplify v)
 ... | _ = Nothing
+
+safeInterp : Expr → Maybe Val
+safeInterp e =
+    case (typeProof e) of λ where
+        (Just ⟨ t , h ⟩) 
+            → Just (simplify (typedInterp (convert e h)))
+        _   → Nothing
+
+{-# COMPILE AGDA2HS safeInterp #-}
 
 ------------------------------------------------------------
 -- PROOFS                                                 --
