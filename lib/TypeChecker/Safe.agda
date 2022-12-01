@@ -3,8 +3,7 @@ module TypeChecker.Safe where
 open import Haskell.Prelude
 open import TypeChecker.Lang
 
-open import Data.Product using (∃;∃-syntax)
-open import Relation.Nullary using (Dec;yes;no)
+open import Data.Product using (∃;∃-syntax) renaming (_,_ to ⟨_,_⟩)
 
 ------------------------------------------------------------
 -- TYPED EXPRESSIONS                                      --
@@ -53,9 +52,13 @@ instance
 
 {-# COMPILE AGDA2HS TVal #-}
 
-val : Type → Set
-val TBool = Bool
-val TInt = Int
+simplify : ∀ {t} → TVal t → Val
+simplify (VBool b) = VBool b
+simplify (VInt i) = VInt i
+
+-- val : Type → Set
+-- val TBool = Bool
+-- val TInt = Int
 
 ------------------------------------------------------------
 -- TYPING JUDGEMENT                                       --
@@ -84,17 +87,43 @@ data HasType : Expr → Type → Set where
 -- TYPE CHECK                                             --
 ------------------------------------------------------------
 
-type : (e : Expr) → Dec (∃[ t ](HasType e t))
-type (EBool b) = yes {! !}
-type (EInt i) = {!   !}
-type (EAdd left right) = {!   !}
-type (EEq left right) = {!   !}
-type (ENot e) = {!   !}
-type (EAnd left right) = {!   !}
-type (EOr left right) = {!   !}
+-- record TypeProof (e : Expr) (t : Type) : Set where
+--     field
+--         expression : Expr
+--         type : Type
+--         proof : HasType e t
+
+type : (e : Expr) → Maybe (∃[ t ](HasType e t))
+type (EBool _) = Just ⟨ TBool , TBool ⟩
+type (EInt _) = Just ⟨ TInt , TInt ⟩
+type (EAdd left right) =
+    case (type left , type right) of λ where
+        (Just ⟨ TInt , hₗ ⟩ , Just ⟨ TInt , hᵣ ⟩)
+            → Just ⟨ TInt , TAdd hₗ hᵣ ⟩
+        _   → Nothing
+type (EEq left right) = 
+    case (type left , type right) of λ where
+        (Just ⟨ TInt , hₗ ⟩ , Just ⟨ TInt , hᵣ ⟩)
+            → Just ⟨ TBool , TEq hₗ hᵣ ⟩
+        _   → Nothing
+type (ENot e) =
+    case (type e) of λ where
+        (Just ⟨ TBool , h ⟩)
+            → Just ⟨ TBool , TNot h ⟩
+        _   → Nothing
+type (EAnd left right) = 
+    case (type left , type right) of λ where
+        (Just ⟨ TBool , hₗ ⟩ , Just ⟨ TBool , hᵣ ⟩)
+            → Just ⟨ TBool , TAnd hₗ hᵣ ⟩
+        _   → Nothing
+type (EOr left right) =
+    case (type left , type right) of λ where
+        (Just ⟨ TBool , hₗ ⟩ , Just ⟨ TBool , hᵣ ⟩)
+            → Just ⟨ TBool , TOr hₗ hᵣ ⟩
+        _   → Nothing
         
 ------------------------------------------------------------
--- SAFE INTERPRETER                                       --
+-- TYPED INTERPRETER                                      --
 ------------------------------------------------------------
 
 convert : ∀ {@0 t} → (e : Expr) → HasType e t → TExpr t
@@ -106,26 +135,40 @@ convert (ENot e) (TNot h) = TENot (convert e h)
 convert (EAnd left right) (TAnd hl hr) = TEAnd (convert left hl) (convert right hr)
 convert (EOr left right) (TOr hl hr) = TEOr (convert left hl) (convert right hr)
 
-safeInterp : ∀ {@0 t} → TExpr t → TVal t
-safeInterp (TEBool b) = VBool b
-safeInterp (TEInt i) = VInt i
-safeInterp (TEAdd left right) =
-    case (safeInterp left , safeInterp right) of λ where
+typedInterp : ∀ {@0 t} → TExpr t → TVal t
+typedInterp (TEBool b) = VBool b
+typedInterp (TEInt i) = VInt i
+typedInterp (TEAdd left right) =
+    case (typedInterp left , typedInterp right) of λ where
         (VInt i , VInt j) → VInt (i + j)
-safeInterp (TEEq left right) =
-    case (safeInterp left , safeInterp right) of λ where
+typedInterp (TEEq left right) =
+    case (typedInterp left , typedInterp right) of λ where
         (VInt i , VInt j) → VBool (i == j)
-safeInterp (TENot e) =
-    case (safeInterp e) of λ where
+typedInterp (TENot e) =
+    case (typedInterp e) of λ where
         (VBool b) → VBool (not b)
-safeInterp (TEAnd left right) = 
-    case (safeInterp left , safeInterp right) of λ where
+typedInterp (TEAnd left right) = 
+    case (typedInterp left , typedInterp right) of λ where
         (VBool a , VBool b) → VBool (a && b)
-safeInterp (TEOr left right) = 
-    case (safeInterp left , safeInterp right) of λ where
+typedInterp (TEOr left right) = 
+    case (typedInterp left , typedInterp right) of λ where
         (VBool a , VBool b) → VBool (a || b)
 
-{-# COMPILE AGDA2HS safeInterp #-}
+{-# COMPILE AGDA2HS typedInterp #-}
+        
+------------------------------------------------------------
+-- SAFE INTERP                                            --
+------------------------------------------------------------
+
+combine : Expr → Maybe (∃[ t ](TVal t))
+combine e with type e
+... | Just ⟨ t , h ⟩ = Just ⟨ t , typedInterp (convert e h) ⟩
+... | _              = Nothing
+
+safeInterp : Expr → Maybe Val
+safeInterp e with combine e
+... | Just ⟨ _ , v ⟩ = Just (simplify v)
+... | _ = Nothing
 
 ------------------------------------------------------------
 -- PROOFS                                                 --
