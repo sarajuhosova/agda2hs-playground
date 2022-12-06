@@ -6,19 +6,53 @@ open import TypeChecker.Lang
 open import Data.Product using (∃;∃-syntax) renaming (_,_ to ⟨_,_⟩)
 
 ------------------------------------------------------------
+-- EQUALITY                                               --
+------------------------------------------------------------
+
+data Same : Type → Type → Set where
+    Yes : ∀ {t s}
+        → (t == s) ≡ True
+        → Same t s
+
+------------------------------------------------------------
+-- CONTEXT                                                --
+------------------------------------------------------------
+
+data In : Type → TCtx → Set where
+    Z : ∀ {t ctx} → In t (t ∷ ctx)
+    S : ∀ {t s ctx} → In t ctx → In t (s ∷ ctx)
+    
+isIn : (t : Type) → (ctx : TCtx) → Maybe (In t ctx)
+isIn _ [] = Nothing
+isIn t (x ∷ ctx) =
+    case (t == x) of λ where
+        True → Just {!   !}
+        False → Nothing
+
+-- eqIn : ∀ {t ctx} → In t ctx → In t ctx → Bool
+-- eqIn Z Z = True
+-- eqIn (S left) (S right) = eqIn left right
+-- eqIn _ _ = False
+
+-- instance
+--   iEqIn : ∀ {@0 t ctx} → Eq (In t (t ∷ ctx))
+--   iEqIn ._==_ = eqIn
+
+------------------------------------------------------------
 -- TYPED EXPRESSIONS                                      --
 ------------------------------------------------------------
 
-data TExpr : @0 Type → Set where
-    TEBool : Bool → TExpr TBool
-    TEInt  : Int  → TExpr TInt
-    TEAdd  : TExpr TInt → TExpr TInt → TExpr TInt
-    TEEq   : TExpr TInt → TExpr TInt → TExpr TBool
-    TENot  : TExpr TBool → TExpr TBool
-    TEAnd  : TExpr TBool → TExpr TBool → TExpr TBool
-    TEOr   : TExpr TBool → TExpr TBool → TExpr TBool
+data TExpr (ctx : TCtx) : @0 Type → Set where
+    TEBool : Bool → TExpr ctx TBool
+    TEInt  : Int  → TExpr ctx TInt
+    TEAdd  : TExpr ctx TInt → TExpr ctx TInt → TExpr ctx TInt
+    TEEq   : TExpr ctx TInt → TExpr ctx TInt → TExpr ctx TBool
+    TENot  : TExpr ctx TBool → TExpr ctx TBool
+    TEAnd  : TExpr ctx TBool → TExpr ctx TBool → TExpr ctx TBool
+    TEOr   : TExpr ctx TBool → TExpr ctx TBool → TExpr ctx TBool
+    TEVar  : ∀ {t} → In t ctx → TExpr ctx t
 
-eqTExpr : ∀ {@0 t} → TExpr t → TExpr t → Bool
+eqTExpr : ∀ {@0 t ctx} → TExpr ctx t → TExpr ctx t → Bool
 eqTExpr (TEBool a) (TEBool b) = a == b
 eqTExpr (TEInt i) (TEInt j) = i == j
 eqTExpr (TEAdd left₁ right₁) (TEAdd left₂ right₂) = eqTExpr left₁ left₂ && eqTExpr right₁ right₂
@@ -26,10 +60,11 @@ eqTExpr (TEEq left₁ right₁) (TEEq left₂ right₂) = eqTExpr left₁ left�
 eqTExpr (TENot a) (TENot b) = eqTExpr a b
 eqTExpr (TEAnd left₁ right₁) (TEAnd left₂ right₂) = eqTExpr left₁ left₂ && eqTExpr right₁ right₂
 eqTExpr (TEOr left₁ right₁) (TEOr left₂ right₂) = eqTExpr left₁ left₂ && eqTExpr right₁ right₂
+eqTExpr (TEVar _) (TEVar _) = True
 eqTExpr _ _ = False
 
 instance
-  iEqTExpr : ∀ {@0 t} → Eq (TExpr t)
+  iEqTExpr : ∀ {@0 t ctx} → Eq (TExpr ctx t)
   iEqTExpr ._==_ = eqTExpr
 
 {-# COMPILE AGDA2HS TExpr #-}
@@ -62,28 +97,34 @@ simplify (VInt i) = VInt i
 -- val TBool = Bool
 -- val TInt = Int
 
+Env : TCtx  → Set
+Env C = All (λ t → TVal t) C
+
 ------------------------------------------------------------
 -- TYPING JUDGEMENT                                       --
 ------------------------------------------------------------
 
-data HasType : Expr → Type → Set where
-    TBool : ∀ {b} → HasType (EBool b) TBool
-    TInt  : ∀ {i} → HasType (EInt  i) TInt
+data HasType (ctx : TCtx) : Expr → Type → Set where
+    TBool : ∀ {b} → HasType ctx (EBool b) TBool
+    TInt  : ∀ {i} → HasType ctx (EInt  i) TInt
     TAdd  : ∀ {left right}
-        → HasType left TInt → HasType right TInt
-        → HasType (EAdd left right) TInt
+        → HasType ctx left TInt → HasType ctx right TInt
+        → HasType ctx (EAdd left right) TInt
     TEq   : ∀ {left right}
-        → HasType left TInt → HasType right TInt
-        → HasType (EEq left right) TBool
+        → HasType ctx left TInt → HasType ctx right TInt
+        → HasType ctx (EEq left right) TBool
     TNot  : ∀ {e}
-        → HasType e TBool
-        → HasType (ENot e) TBool
+        → HasType ctx e TBool
+        → HasType ctx (ENot e) TBool
     TAnd  : ∀ {left right}
-        → HasType left TBool → HasType right TBool
-        → HasType (EAnd left right) TBool
+        → HasType ctx left TBool → HasType ctx right TBool
+        → HasType ctx (EAnd left right) TBool
     TOr   : ∀ {left right}
-        → HasType left TBool → HasType right TBool
-        → HasType (EOr left right) TBool
+        → HasType ctx left TBool → HasType ctx right TBool
+        → HasType ctx (EOr left right) TBool
+    TVar  : ∀ {x t}
+        → In t ctx
+        → HasType ctx (EVar x) t
         
 ------------------------------------------------------------
 -- TYPE CHECK                                             --
@@ -100,42 +141,49 @@ data HasType : Expr → Type → Set where
 --         type : T
 --         proof : P type
 
-typeProof : (e : Expr) → Maybe (∃[ t ](HasType e t))
-typeProof (EBool _) = Just ⟨ TBool , TBool ⟩
-typeProof (EInt _) = Just ⟨ TInt , TInt ⟩
-typeProof (EAdd left right) =
-    case (typeProof left , typeProof right) of λ where
+typeProof' : (e : Expr) → (ctx : TCtx) → Maybe (∃[ t ](HasType ctx e t))
+typeProof' (EBool _) ctx = Just ⟨ TBool , TBool ⟩
+typeProof' (EInt _) ctx = Just ⟨ TInt , TInt ⟩
+typeProof' (EAdd left right) ctx =
+    case (typeProof' left ctx , typeProof' right ctx) of λ where
         (Just ⟨ TInt , hₗ ⟩ , Just ⟨ TInt , hᵣ ⟩)
             → Just ⟨ TInt , TAdd hₗ hᵣ ⟩
         _   → Nothing
-typeProof (EEq left right) = 
-    case (typeProof left , typeProof right) of λ where
+typeProof' (EEq left right) ctx = 
+    case (typeProof' left ctx , typeProof' right ctx) of λ where
         (Just ⟨ TInt , hₗ ⟩ , Just ⟨ TInt , hᵣ ⟩)
             → Just ⟨ TBool , TEq hₗ hᵣ ⟩
         _   → Nothing
-typeProof (ENot e) =
-    case (typeProof e) of λ where
+typeProof' (ENot e) ctx =
+    case (typeProof' e ctx) of λ where
         (Just ⟨ TBool , h ⟩)
             → Just ⟨ TBool , TNot h ⟩
         _   → Nothing
-typeProof (EAnd left right) = 
-    case (typeProof left , typeProof right) of λ where
+typeProof' (EAnd left right) ctx = 
+    case (typeProof' left ctx , typeProof' right ctx) of λ where
         (Just ⟨ TBool , hₗ ⟩ , Just ⟨ TBool , hᵣ ⟩)
             → Just ⟨ TBool , TAnd hₗ hᵣ ⟩
         _   → Nothing
-typeProof (EOr left right) =
-    case (typeProof left , typeProof right) of λ where
+typeProof' (EOr left right) ctx =
+    case (typeProof' left ctx , typeProof' right ctx) of λ where
         (Just ⟨ TBool , hₗ ⟩ , Just ⟨ TBool , hᵣ ⟩)
             → Just ⟨ TBool , TOr hₗ hᵣ ⟩
         _   → Nothing
+typeProof' (EVar x) ctx =
+    case (get x ctx) of λ where
+        (Just t) → Just ⟨ t , TVar {!   !} ⟩
+        _ → Nothing
 
-{-# COMPILE AGDA2HS typeProof #-}
+typeProof : (e : Expr) → Maybe (∃[ t ](HasType [] e t))
+typeProof e = typeProof' e []
+
+{-# COMPILE AGDA2HS typeProof' #-}
         
 ------------------------------------------------------------
 -- TYPED INTERPRETER                                      --
 ------------------------------------------------------------
 
-convert : ∀ {@0 t} → (e : Expr) → @0 HasType e t → TExpr t
+convert : ∀ {@0 t ctx} → (e : Expr) → @0 HasType ctx e t → TExpr ctx t
 convert (EBool b) TBool = TEBool b
 convert (EInt i) TInt = TEInt i
 convert (EAdd left right) (TAdd hl hr) = TEAdd (convert left hl) (convert right hr)
@@ -143,8 +191,9 @@ convert (EEq left right) (TEq hl hr) = TEEq (convert left hl) (convert right hr)
 convert (ENot e) (TNot h) = TENot (convert e h)
 convert (EAnd left right) (TAnd hl hr) = TEAnd (convert left hl) (convert right hr)
 convert (EOr left right) (TOr hl hr) = TEOr (convert left hl) (convert right hr)
+convert (EVar x) (TVar hx) = {!   !}
 
-typedInterp : ∀ {@0 t} → TExpr t → TVal t
+typedInterp : ∀ {@0 t ctx} → TExpr ctx t → TVal t
 typedInterp (TEBool b) = VBool b
 typedInterp (TEInt i) = VInt i
 typedInterp (TEAdd left right) =
@@ -162,6 +211,7 @@ typedInterp (TEAnd left right) =
 typedInterp (TEOr left right) = 
     case (typedInterp left , typedInterp right) of λ where
         (VBool a , VBool b) → VBool (a || b)
+typedInterp (TEVar x) = {!   !}
 
 {-# COMPILE AGDA2HS convert #-}
 {-# COMPILE AGDA2HS typedInterp #-}
@@ -170,15 +220,15 @@ typedInterp (TEOr left right) =
 -- SAFE INTERP                                            --
 ------------------------------------------------------------
 
-combine' : Expr → Maybe (∃[ t ](TVal t))
-combine' e with typeProof e
-... | Just ⟨ t , h ⟩ = Just ⟨ t , typedInterp (convert e h) ⟩
-... | _              = Nothing
+-- combine' : Expr → Maybe (∃[ t ](TVal t))
+-- combine' e with typeProof' e
+-- ... | Just ⟨ t , h ⟩ = Just ⟨ t , typedInterp (convert e h) ⟩
+-- ... | _              = Nothing
 
-safeInterp' : Expr → Maybe Val
-safeInterp' e with combine' e
-... | Just ⟨ _ , v ⟩ = Just (simplify v)
-... | _ = Nothing
+-- safeInterp' : Expr → Maybe Val
+-- safeInterp' e with combine' e
+-- ... | Just ⟨ _ , v ⟩ = Just (simplify v)
+-- ... | _ = Nothing
 
 safeInterp : Expr → Maybe Val
 safeInterp e =
@@ -193,5 +243,6 @@ safeInterp e =
 -- PROOFS                                                 --
 ------------------------------------------------------------
 
-_ : HasType (EAdd (EInt 3) (EInt 5)) TInt
+_ : HasType [] (EAdd (EInt 3) (EInt 5)) TInt
 _ = TAdd TInt TInt
+ 

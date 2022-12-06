@@ -33,6 +33,7 @@ data Expr : Set where
     ENot  : Expr → Expr
     EAnd  : Expr → Expr → Expr
     EOr   : Expr → Expr → Expr
+    EVar  : Int → Expr
 
 eqExpr : Expr → Expr → Bool
 eqExpr (EBool a) (EBool b) = a == b
@@ -42,6 +43,7 @@ eqExpr (EEq left₁ right₁) (EEq left₂ right₂) = eqExpr left₁ left₂ &&
 eqExpr (ENot a) (ENot b) = eqExpr a b
 eqExpr (EAnd left₁ right₁) (EAnd left₂ right₂) = eqExpr left₁ left₂ && eqExpr right₁ right₂
 eqExpr (EOr left₁ right₁) (EOr left₂ right₂) = eqExpr left₁ left₂ && eqExpr right₁ right₂
+eqExpr (EVar x) (EVar y) = x == y
 eqExpr _ _ = False
 
 instance
@@ -68,3 +70,17 @@ instance
   iEqVal ._==_ = eqVal
 
 {-# COMPILE AGDA2HS Val #-}
+
+------------------------------------------------------------
+-- CONTEXT                                                --
+------------------------------------------------------------
+
+VCtx = List Val
+TCtx = List Type
+
+get : Int → List e → Maybe e
+get _ [] = Nothing
+get i (x ∷ xs) = if i >= length xs then Just x else get i xs
+
+{-# COMPILE AGDA2HS TCtx #-}
+{-# COMPILE AGDA2HS get #-}
