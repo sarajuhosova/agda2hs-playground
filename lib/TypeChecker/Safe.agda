@@ -3,7 +3,8 @@ module TypeChecker.Safe where
 open import Haskell.Prelude
 open import TypeChecker.Lang
 
-open import Data.Product using (∃;∃-syntax) renaming (_,_ to ⟨_,_⟩)
+-- open import Data.Product using (∃;∃-syntax) renaming (_,_ to ⟨_,_⟩)
+open import HData.HSum using (∃;∃-syntax;⟨_,_⟩)
 
 ------------------------------------------------------------
 -- TYPED EXPRESSIONS                                      --
@@ -66,7 +67,7 @@ simplify (VInt i) = VInt i
 -- TYPING JUDGEMENT                                       --
 ------------------------------------------------------------
 
-data HasType : Expr → Type → Set where
+data HasType : Expr → @0 Type → Set where
     TBool : ∀ {b} → HasType (EBool b) TBool
     TInt  : ∀ {i} → HasType (EInt  i) TInt
     TAdd  : ∀ {left right}
@@ -88,17 +89,6 @@ data HasType : Expr → Type → Set where
 ------------------------------------------------------------
 -- TYPE CHECK                                             --
 ------------------------------------------------------------
-
--- record Σ {a b} (A : Set a) (B : A → Set b) : Set (a ⊔ b) where
---   constructor _,_
---   field
---     fst : A
---     snd : B fst
-
--- record TypeProof {e : Expr} {t : Type} (T : Set t) (P : T → HasType e T) : Set where
---     field
---         type : T
---         proof : P type
 
 typeProof : (e : Expr) → Maybe (∃[ t ](HasType e t))
 typeProof (EBool _) = Just ⟨ TBool , TBool ⟩
@@ -170,15 +160,15 @@ typedInterp (TEOr left right) =
 -- SAFE INTERP                                            --
 ------------------------------------------------------------
 
-combine' : Expr → Maybe (∃[ t ](TVal t))
-combine' e with typeProof e
-... | Just ⟨ t , h ⟩ = Just ⟨ t , typedInterp (convert e h) ⟩
-... | _              = Nothing
+-- combine' : Expr → Maybe (∃[ t ](TVal t))
+-- combine' e with typeProof e
+-- ... | Just ⟨ t , h ⟩ = Just ⟨ t , typedInterp (convert e h) ⟩
+-- ... | _              = Nothing
 
-safeInterp' : Expr → Maybe Val
-safeInterp' e with combine' e
-... | Just ⟨ _ , v ⟩ = Just (simplify v)
-... | _ = Nothing
+-- safeInterp' : Expr → Maybe Val
+-- safeInterp' e with combine' e
+-- ... | Just ⟨ _ , v ⟩ = Just (simplify v)
+-- ... | _ = Nothing
 
 safeInterp : Expr → Maybe Val
 safeInterp e =
