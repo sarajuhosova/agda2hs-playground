@@ -1,5 +1,6 @@
-BUILT="./build/*"
-for f in $BUILT; do rm -rf $f; done
+#!/bin/bash
 
-A_FILES="./agda/*.agda"
-for f in $A_FILES; do agda2hs $f -o build; done
+rm -rf build
+
+FILES=$(find -name "*.agda" -type f)
+for f in $FILES; do agda2hs $f -o build; done
