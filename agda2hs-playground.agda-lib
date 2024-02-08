@@ -1,0 +1,4 @@
+name: agda2hs-playground
+include: agda
+depend: agda2hs
+flags: --erasure --erase-record-parameters
