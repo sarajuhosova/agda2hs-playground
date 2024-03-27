@@ -67,14 +67,24 @@ library agda
     import:           shared-properties
     hs-source-dirs:   build
     exposed-modules:  Util
+                    , Util.Evaluator
+                    , Util.Scope
+                    , Interp.Grammar
+                    , TypeCheck.Type
+                    , TypeCheck.Lang
+                    , TypeCheck.Context
+                    , TypeCheck.TypeChecker
+                    , TypeCheck.TypingRules
 
 library hs
     import:           shared-properties
     hs-source-dirs:   src
     exposed-modules:  Hello
+                    , TypeCheck.Examples
 
     -- Other library packages from which modules are imported.
     build-depends:    agda
+                    , QuickCheck >= 2.14.3
 
 executable agda2hs-playground
     -- Import common warning flags.

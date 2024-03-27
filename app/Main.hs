@@ -1,6 +1,6 @@
 module Main where
     
-import Hello (hello)
+import TypeCheck.Examples (runExamples)
 
 main :: IO ()
-main = hello
+main = runExamples

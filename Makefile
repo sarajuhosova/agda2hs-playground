@@ -8,8 +8,8 @@ build: compile
 
 compile:
 	@echo "Generating Haskell library with Agda2HS..."
-	@chmod +x build.sh
-	@./build.sh
+	@chmod +x compile.sh
+	@./compile.sh
 	@echo ""
 
 install :
